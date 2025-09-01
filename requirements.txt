@@ -1,0 +1,4 @@
+python-telegram-bot[job-queue]==20.7
+selenium==4.15.2
+webdriver-manager==4.0.1
+psutil==5.9.6
