@@ -5,6 +5,7 @@
 import logging
 import asyncio
 import signal
+import datetime
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from config import BOT_TOKEN, CHECK_INTERVAL
 from handlers import (start_cmd, status_cmd, handle_text_message,
