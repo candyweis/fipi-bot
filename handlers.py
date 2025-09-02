@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+
 """
 Обработчики команд и сообщений Telegram - С редактированием сообщений
 """
@@ -9,6 +10,7 @@ import logging
 from datetime import datetime, date
 from telegram import Update, Message
 from telegram.ext import ContextTypes, ApplicationHandlerStop
+
 from keyboards import (kb_main_reply, kb_subjects_reply, kb_user_subjects_reply,
                        kb_subscriptions_menu_reply, kb_cached_result_choice,
                        kb_reminders_menu, kb_subjects_reminders)
@@ -23,6 +25,9 @@ log = logging.getLogger("FIPI-Bot")
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /start"""
+    print(f"🚀 START команда от {update.message.from_user.id}")
+    log.info(f"🚀 START команда от {update.message.from_user.id}")
+
     clean_old_parsing_cache()
     await update.message.reply_text(
         "🤖 Добро пожаловать в ФИПИ-бот!\n\n"
@@ -43,29 +48,32 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = message.text
     chat_id = str(message.from_user.id)
 
+    # ДОБАВЬТЕ ОТЛАДКУ
+    print(f"🔥 ПОЛУЧЕНО: '{text}' от {chat_id}")
+    print(f"🔥 СОСТОЯНИЕ: {context.user_data}")
     log.info(f"Text message: '{text}' from chat_id: {chat_id}")
 
-    # Обработка выбора кэшированного результата
+    # ПРИОРИТЕТ 1: Обработка кэшированного результата
     if context.user_data.get("waiting_for_cache_choice"):
         await handle_cache_choice(message, context, text)
         return
 
-    # ПРИОРИТЕТ: Сначала проверяем, ждем ли мы выбор предмета от пользователя
+    # ПРИОРИТЕТ 2: Обработка выбора предмета пользователем
     if context.user_data.get("waiting_for_subject"):
         await handle_user_subject_action(message, context, text)
         return
 
-    # Назад в меню
+    # ПРИОРИТЕТ 3: Назад в меню
     if text == "⬅ Назад в меню":
         context.user_data.clear()
         await message.reply_text("🏠 Главное меню:", reply_markup=kb_main_reply())
         return
 
-    # Главное меню
+    # ПРИОРИТЕТ 4: Главное меню
     if text == "📚 Подписки":
         await show_subscriptions_menu(message, context)
     elif text == "📊 Количество заданий":
-        await show_task_counts(message, context)  # ИСПРАВЛЕННАЯ ФУНКЦИЯ
+        await show_task_counts(message, context)
     elif text == "🆔 Файл всех ID":
         await show_ids_menu(message, context)
     elif text == "🔄 Сравнить ID":
@@ -86,96 +94,39 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await show_my_reminder_subs(message, context)
     elif text == "📅 Расписание по предмету":
         await message.reply_text("Выберите предмет для просмотра расписания:", reply_markup=kb_subjects_reminders())
+
+    # ПРИОРИТЕТ 5: Выбор предмета для напоминаний/расписания
     elif text in ALL_SUBJECTS:
         if context.user_data.get("waiting_for_reminder_sub"):
             await handle_reminder_subscription(message, context, text)
         else:
             await show_schedule_by_subject(message, context, text)
-    # Подписки на ОГЭ/ЕГЭ
+
+    # ПРИОРИТЕТ 6: Подписки на ОГЭ/ЕГЭ
     elif text.startswith("Подписаться на ОГЭ"):
-        await message.reply_text(
-            "📚 Выберите предмет ОГЭ:",
-            reply_markup=kb_subjects_reply("oge")
-        )
+        await message.reply_text("📚 Выберите предмет ОГЭ:", reply_markup=kb_subjects_reply("oge"))
     elif text.startswith("Подписаться на ЕГЭ"):
-        await message.reply_text(
-            "📚 Выберите предмет ЕГЭ:",
-            reply_markup=kb_subjects_reply("ege")
-        )
+        await message.reply_text("📚 Выберите предмет ЕГЭ:", reply_markup=kb_subjects_reply("ege"))
+
+    # ПРИОРИТЕТ 7: Выбор предметов для ПОДПИСКИ (только если нет других состояний)
     elif text.startswith("ОГЭ ") or text.startswith("ЕГЭ "):
-        await handle_subject_selection(message, context, text)
+        # ❗ ВАЖНО: Проверяем, что это именно для подписки
+        if not context.user_data.get("waiting_for_subject"):
+            await handle_subject_selection(message, context, text)
+        else:
+            # Если есть состояние waiting_for_subject, это должно было обработаться выше
+            await message.reply_text("❌ Ошибка состояния. Начните заново.", reply_markup=kb_main_reply())
+            context.user_data.clear()
     else:
         await message.reply_text(
             "❓ Не понимаю эту команду. Используйте кнопки меню:",
             reply_markup=kb_main_reply()
         )
 
-    context.user_data.clear()
+    # ❌ УДАЛИЛИ ЭТУ СТРОЧКУ - ОНА ЛОМАЛА ВСЁ!
+    # context.user_data.clear()
 
 
-async def show_task_counts(message: Message, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает текущее количество заданий по подпискам - НЕБЛОКИРУЮЩАЯ ВЕРСИЯ"""
-    from queue_manager import init_executor, executor
-
-    chat_id = str(message.from_user.id)
-    subs = store["subscriptions"].get(chat_id, [])
-
-    if not subs:
-        await message.reply_text(
-            "📭 У вас нет подписок.",
-            reply_markup=kb_main_reply()
-        )
-        return
-
-    # Инициализируем ProcessPoolExecutor
-    await init_executor()
-
-    msg = await message.reply_text(
-        f"📊 Начинаю подсчет для {len(subs)} предметов...\n"
-        f"⏳ Это займет примерно {len(subs) * 10} секунд\n"
-        f"🔄 Бот продолжает работать в фоне!"
-    )
-
-    lines = ["📊 Текущее количество заданий:"]
-
-    # Запускаем ВСЕ задачи параллельно
-    tasks = []
-    for url in subs:
-        task = asyncio.get_event_loop().run_in_executor(executor, get_current_count, url)
-        tasks.append((url, task))
-
-    log.info(f"🚀 Запущено {len(tasks)} параллельных задач подсчета для пользователя {chat_id}")
-
-    # Обрабатываем результаты по мере готовности
-    completed = 0
-    for url, task in tasks:
-        try:
-            await msg.edit_text(
-                f"📊 Подсчет в процессе...\n"
-                f"✅ Завершено: {completed}/{len(subs)}\n"
-                f"⏳ Осталось: {len(subs) - completed}\n"
-                f"🔄 Бот отвечает на другие команды!"
-            )
-
-            # Ждем результат конкретной задачи
-            cnt = await task
-            lines.append(f"• {subj_by_url(url)}: {cnt if cnt is not None else 'не получено'}")
-            completed += 1
-
-        except Exception as e:
-            log.error(f"Ошибка получения количества для {url}: {e}")
-            lines.append(f"• {subj_by_url(url)}: ошибка")
-            completed += 1
-
-    # Показываем финальный результат
-    await msg.edit_text("\n".join(lines))
-    await message.reply_text("✅ Подсчет завершен! Бот работал параллельно.", reply_markup=kb_main_reply())
-
-    log.info(f"✅ Подсчет количества завершен для пользователя {chat_id}")
-    context.user_data.clear()
-
-
-# Остальные функции остаются без изменений
 async def handle_cache_choice(message: Message, context: ContextTypes.DEFAULT_TYPE, text: str):
     """Обрабатывает выбор между кэшированным результатом и новым парсингом"""
     if text == "⬅ Назад в меню":
@@ -209,6 +160,7 @@ async def handle_cache_choice(message: Message, context: ContextTypes.DEFAULT_TY
             "❓ Выберите один из вариантов:",
             reply_markup=kb_cached_result_choice()
         )
+        return
 
     context.user_data.clear()
 
@@ -233,7 +185,6 @@ async def send_cached_ids_file(message: Message, ids: set, url: str, timestamp: 
         )
 
     await message.reply_text("✅ Готовый файл отправлен!", reply_markup=kb_main_reply())
-
     try:
         os.remove(fname)
     except:
@@ -332,6 +283,41 @@ async def show_my_subscriptions(message: Message, context: ContextTypes.DEFAULT_
         )
 
 
+async def show_task_counts(message: Message, context: ContextTypes.DEFAULT_TYPE):
+    """ИСПРАВЛЕННАЯ ВЕРСИЯ - НЕ БЛОКИРУЕТ БОТ"""
+    chat_id = str(message.from_user.id)
+    subs = store["subscriptions"].get(chat_id, [])
+
+    if not subs:
+        await message.reply_text(
+            "📭 У вас нет подписок.",
+            reply_markup=kb_main_reply()
+        )
+        return
+
+    msg = await message.reply_text("📊 Получение данных...")
+    lines = ["📊 Текущее количество заданий:"]
+
+    # ПАРАЛЛЕЛЬНОЕ ВЫПОЛНЕНИЕ - НЕ БЛОКИРУЕТ БОТ
+    tasks = []
+    for url in subs:
+        task = asyncio.get_event_loop().run_in_executor(None, get_current_count, url)
+        tasks.append((url, task))
+
+    # Обрабатываем результаты по мере готовности
+    for i, (url, task) in enumerate(tasks, 1):
+        try:
+            await msg.edit_text(f"📊 Получение данных... ({i}/{len(subs)})")
+            cnt = await task
+            lines.append(f"• {subj_by_url(url)}: {cnt if cnt is not None else 'не получено'}")
+        except Exception as e:
+            log.error(f"Ошибка получения количества для {url}: {e}")
+            lines.append(f"• {subj_by_url(url)}: ошибка")
+
+    await msg.edit_text("\n".join(lines))
+    await message.reply_text("✅ Данные обновлены", reply_markup=kb_main_reply())
+
+
 async def show_ids_menu(message: Message, context: ContextTypes.DEFAULT_TYPE):
     """Показывает меню для создания файла ID"""
     chat_id = str(message.from_user.id)
@@ -403,8 +389,8 @@ async def handle_user_subject_action(message: Message, context: ContextTypes.DEF
 
     chat_id = str(message.from_user.id)
     subs = store["subscriptions"].get(chat_id, [])
-    url = None
 
+    url = None
     for sub_url in subs:
         if subj_by_url(sub_url) == text:
             url = sub_url
@@ -435,6 +421,7 @@ async def handle_user_subject_action(message: Message, context: ContextTypes.DEF
                 context.user_data["pending_operation"] = operation
                 context.user_data["pending_url"] = url
                 context.user_data["waiting_for_cache_choice"] = True
+
                 await message.reply_text(
                     f"📁 Найден недавний результат парсинга!\n\n"
                     f"📚 {subj_by_url(url)}\n"
@@ -503,7 +490,6 @@ async def send_ids_file_result(query, context: ContextTypes.DEFAULT_TYPE, ids: s
         )
 
     await query.message.reply_text("✅ Файл отправлен!", reply_markup=kb_main_reply())
-
     try:
         os.remove(fname)
     except:
@@ -523,17 +509,16 @@ async def compare_ids_now_result(query, context: ContextTypes.DEFAULT_TYPE, resu
         )
     else:
         await query.edit_message_text("✅ Парсинг завершен! Найдены изменения...")
-        txt_lines = ["🔄 Изменения найдены:"]
 
+        txt_lines = ["🔄 Изменения найдены:"]
         if added:
             txt_lines.append(f"➕ Добавлены ({len(added)}): " + ", ".join(sorted(list(added)[:10])))
             if len(added) > 10:
-                txt_lines.append(f" ... и ещё {len(added) - 10}")
-
+                txt_lines.append(f"   ... и ещё {len(added) - 10}")
         if removed:
             txt_lines.append(f"➖ Удалены ({len(removed)}): " + ", ".join(sorted(list(removed)[:10])))
             if len(removed) > 10:
-                txt_lines.append(f" ... и ещё {len(removed) - 10}")
+                txt_lines.append(f"   ... и ещё {len(removed) - 10}")
 
         txt = "\n".join(txt_lines)
         messages = split_message(txt)
@@ -559,6 +544,7 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 # Новые функции для напоминаний
+
 async def show_reminders_menu(message: Message, context: ContextTypes.DEFAULT_TYPE):
     await message.reply_text("📅 Меню расписания и напоминаний:", reply_markup=kb_reminders_menu())
 
@@ -566,12 +552,14 @@ async def show_reminders_menu(message: Message, context: ContextTypes.DEFAULT_TY
 async def handle_reminder_subscription(message: Message, context: ContextTypes.DEFAULT_TYPE, text: str):
     chat_id = str(message.from_user.id)
     subs = store["reminder_subscriptions"].setdefault(chat_id, [])
+
     if text in subs:
         subs.remove(text)
         await message.reply_text(f"✅ Отписка от {text}", reply_markup=kb_reminders_menu())
     else:
         subs.append(text)
         await message.reply_text(f"✅ Подписка на {text}", reply_markup=kb_reminders_menu())
+
     save_store(store)
     context.user_data.clear()
 
@@ -579,16 +567,19 @@ async def handle_reminder_subscription(message: Message, context: ContextTypes.D
 async def show_my_reminder_subs(message: Message, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(message.from_user.id)
     subs = store["reminder_subscriptions"].get(chat_id, [])
+
     if not subs:
         await message.reply_text("📭 Нет подписок на напоминания.", reply_markup=kb_reminders_menu())
     else:
         text = "📋 Ваши подписки на напоминания:\n" + "\n".join(subs)
         await message.reply_text(text, reply_markup=kb_reminders_menu())
+
     context.user_data.clear()
 
 
 async def show_schedule_by_subject(message: Message, context: ContextTypes.DEFAULT_TYPE, text: str):
     subject_exams = [exam for exam in EXAMS_LIST if exam["subject"] == text]
+
     if not subject_exams:
         await message.reply_text(f"Нет расписания для {text}.", reply_markup=kb_reminders_menu())
         return
@@ -601,7 +592,7 @@ async def show_schedule_by_subject(message: Message, context: ContextTypes.DEFAU
     context.user_data.clear()
 
 
-# Функция для ежедневных напоминаний
+# Функция для ежедневных напоминаний (из tg-bot.py, интегрирована)
 async def send_notification(context: ContextTypes.DEFAULT_TYPE):
     """Функция, которая проверяет даты и рассылает уведомления."""
     today = date.today()
@@ -611,6 +602,7 @@ async def send_notification(context: ContextTypes.DEFAULT_TYPE):
         days_until = (exam["date"] - today).days
         if days_until in (1, 7):
             message_text = f"🔔 Напоминание! Через {days_until} день(дня) состоится:\n{exam['title']}"
+
             subscribers = []
             for chat_id, subjects in store.get("reminder_subscriptions", {}).items():
                 if exam["subject"] in subjects:
@@ -622,4 +614,5 @@ async def send_notification(context: ContextTypes.DEFAULT_TYPE):
                     log.info(f"Уведомление отправлено пользователю {user_id} о {exam['subject']}")
                 except Exception as e:
                     log.error(f"Ошибка отправки пользователю {user_id}: {e}")
+
                 await asyncio.sleep(0.1)
