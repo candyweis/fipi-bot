@@ -13,8 +13,8 @@ RETRY_DELAY_MULTIPLIER = 2
 MAX_WEBDRIVERS = 4
 PARSING_TIMEOUT = 18000  # 30 минут максимум на парсинг
 # Настройки параллельного парсинга
-MAX_CONCURRENT_PARSING = 30  # Максимум 3 парсинга одновременно
-MAX_CONCURRENT_AUTO_PARSING = 25  # Максимум 2 автоматических парсинга одновременно
+MAX_CONCURRENT_PARSING = 6  # Максимум 3 парсинга одновременно
+MAX_CONCURRENT_AUTO_PARSING = 4  # Максимум 2 автоматических парсинга одновременно
 MEMORY_LIMIT_PERCENT = 85  # Если память > 85%, не запускать новые парсинги
 CPU_LIMIT_PERCENT = 90  # Если CPU > 90%, не запускать новые парсинги
 
