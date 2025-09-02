@@ -294,7 +294,7 @@ async def show_my_subscriptions(message: Message, context: ContextTypes.DEFAULT_
 
 
 async def show_task_counts(message: Message, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает текущее количество заданий по подпискам"""
+    """Показывает текущее количество заданий по подпискам - НЕБЛОКИРУЮЩАЯ ВЕРСИЯ"""
     chat_id = str(message.from_user.id)
     subs = store["subscriptions"].get(chat_id, [])
 
@@ -305,20 +305,38 @@ async def show_task_counts(message: Message, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
+    # Используем тот же executor что и для парсинга
+    from queue_manager import init_executor, executor
+    await init_executor()
+
     msg = await message.reply_text("📊 Получение данных...")
     lines = ["📊 Текущее количество заданий:"]
 
-    for i, url in enumerate(subs, 1):
+    # Запускаем все задачи параллельно
+    tasks = []
+    for url in subs:
+        task = asyncio.get_event_loop().run_in_executor(
+            executor,  # Используем ProcessPoolExecutor вместо дефолтного
+            get_current_count,
+            url
+        )
+        tasks.append((url, task))
+
+    completed = 0
+    for url, task in tasks:
         try:
-            await msg.edit_text(f"📊 Получение данных... ({i}/{len(subs)})")
-            cnt = await asyncio.get_event_loop().run_in_executor(None, get_current_count, url)
+            await msg.edit_text(f"📊 Получение данных... ({completed + 1}/{len(subs)})")
+            cnt = await task
             lines.append(f"• {subj_by_url(url)}: {cnt if cnt is not None else 'не получено'}")
         except Exception as e:
             log.error(f"Ошибка получения количества для {url}: {e}")
             lines.append(f"• {subj_by_url(url)}: ошибка")
 
+        completed += 1
+
     await msg.edit_text("\n".join(lines))
     await message.reply_text("✅ Данные обновлены", reply_markup=kb_main_reply())
+
     # НЕ очищаем тут, так как операция уже завершена
 
 
