@@ -70,7 +70,7 @@ def main():
     app.job_queue.run_repeating(periodic_check, interval=CHECK_INTERVAL, first=30)  # Проверка каждую минуту
     app.job_queue.run_repeating(daily_cleanup, interval=86400, first=3600)  # Очистка каждые 24 часа, первая через час
     # Новый: ежедневные напоминания о расписании (на 10:00 MSK)
-    app.job_queue.run_daily(send_notification, time=datetime.strptime("10:00", "%H:%M").time())
+    app.job_queue.run_daily(send_notification, time=datetime.datetime.strptime("10:00", "%H:%M").time())
     # Обработка ошибок
     app.add_error_handler(on_error)
     print("🤖 ФИПИ-бот запущен с автоматическими проверками!")
