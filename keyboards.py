@@ -3,8 +3,7 @@
 Клавиатуры для Telegram бота - С выбором кэшированных результатов
 """
 from telegram import ReplyKeyboardMarkup, KeyboardButton
-from config import OGE_SUBJECT_LIST, EGE_SUBJECT_LIST
-
+from config import OGE_SUBJECT_LIST, EGE_SUBJECT_LIST, ALL_SUBJECTS
 
 def kb_main_reply() -> ReplyKeyboardMarkup:
     """Главное меню - Reply клавиатура"""
@@ -12,7 +11,7 @@ def kb_main_reply() -> ReplyKeyboardMarkup:
         ["📚 Подписки", "📊 Количество заданий"],
         ["🆔 Файл всех ID", "🔄 Сравнить ID"],
         ["❌ Отписаться", "📋 Мои подписки"],
-        ["ℹ️ Статус очереди"]
+        ["📅 Расписание и напоминания", "ℹ️ Статус очереди"]
     ]
     return ReplyKeyboardMarkup(
         keyboard,
@@ -21,12 +20,10 @@ def kb_main_reply() -> ReplyKeyboardMarkup:
         input_field_placeholder="Выберите действие..."
     )
 
-
 def kb_subjects_reply(exam_type: str) -> ReplyKeyboardMarkup:
     """Клавиатура выбора предметов - Reply"""
     subjects = OGE_SUBJECT_LIST if exam_type == "oge" else EGE_SUBJECT_LIST
     keyboard = []
-
     # Группируем предметы по 2 в строке
     for i in range(0, len(subjects), 2):
         row = []
@@ -35,22 +32,17 @@ def kb_subjects_reply(exam_type: str) -> ReplyKeyboardMarkup:
             prefix = "ОГЭ" if exam_type == "oge" else "ЕГЭ"
             row.append(f"{prefix} {name}")
         keyboard.append(row)
-
     keyboard.append(["⬅ Назад в меню"])
-
     return ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,
         one_time_keyboard=False
     )
 
-
 def kb_user_subjects_reply(subjects_urls: list, action: str) -> ReplyKeyboardMarkup:
     """Клавиатура с предметами пользователя - Reply"""
     from utils import subj_by_url
-
     keyboard = []
-
     # Группируем предметы по 2 в строке
     for i in range(0, len(subjects_urls), 2):
         row = []
@@ -58,15 +50,12 @@ def kb_user_subjects_reply(subjects_urls: list, action: str) -> ReplyKeyboardMar
             subject_name = subj_by_url(subjects_urls[j])
             row.append(subject_name)
         keyboard.append(row)
-
     keyboard.append(["⬅ Назад в меню"])
-
     return ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,
         one_time_keyboard=False
     )
-
 
 def kb_subscriptions_menu_reply() -> ReplyKeyboardMarkup:
     """Меню подписок - Reply"""
@@ -80,7 +69,6 @@ def kb_subscriptions_menu_reply() -> ReplyKeyboardMarkup:
         one_time_keyboard=False
     )
 
-
 def kb_cached_result_choice() -> ReplyKeyboardMarkup:
     """Клавиатура выбора между кэшированным результатом и новым парсингом"""
     keyboard = [
@@ -88,6 +76,34 @@ def kb_cached_result_choice() -> ReplyKeyboardMarkup:
         ["🔄 Запустить новый парсинг"],
         ["⬅ Назад в меню"]
     ]
+    return ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+
+def kb_reminders_menu() -> ReplyKeyboardMarkup:
+    """Меню для расписания и напоминаний"""
+    keyboard = [
+        ["📝 Подписаться на предметы", "📋 Мои подписки (напоминания)"],
+        ["📅 Расписание по предмету"],
+        ["⬅ Назад в меню"]
+    ]
+    return ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+
+def kb_subjects_reminders() -> ReplyKeyboardMarkup:
+    """Клавиатура выбора предметов для напоминаний"""
+    keyboard = []
+    for i in range(0, len(ALL_SUBJECTS), 2):
+        row = []
+        for j in range(i, min(i + 2, len(ALL_SUBJECTS))):
+            row.append(ALL_SUBJECTS[j])
+        keyboard.append(row)
+    keyboard.append(["⬅ Назад в меню"])
     return ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,

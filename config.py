@@ -2,9 +2,9 @@
 """
 Конфигурация и константы для ФИПИ-бота
 """
+from datetime import date
 
 BOT_TOKEN = "7238087192:AAF_v9R4jS_O2dZ8tRqG6wjNbEk75GUSrkA"
-
 DATA_FILE = "bot_data.json"
 CHECK_INTERVAL = 60  # Проверка каждую минуту
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
@@ -12,7 +12,6 @@ INITIAL_RETRY_DELAY = 5
 RETRY_DELAY_MULTIPLIER = 2
 MAX_WEBDRIVERS = 4
 PARSING_TIMEOUT = 18000  # 30 минут максимум на парсинг
-
 # Настройки параллельного парсинга
 MAX_CONCURRENT_PARSING = 30  # Максимум 3 парсинга одновременно
 MAX_CONCURRENT_AUTO_PARSING = 25  # Максимум 2 автоматических парсинга одновременно
@@ -21,32 +20,131 @@ CPU_LIMIT_PERCENT = 90  # Если CPU > 90%, не запускать новые
 
 OGE_SUBJECTS = {
     "Английский язык": "https://oge.fipi.ru/bank/index.php?proj=8BBD5C99F37898B6402964AB11955663",
-    "Биология":         "https://oge.fipi.ru/bank/index.php?proj=0E1FA4229923A5CE4FC368155127ED90",
-    "География":        "https://oge.fipi.ru/bank/index.php?proj=0FA4DA9E3AE2BA1547B75F0B08EF6445",
-    "Информатика":      "https://oge.fipi.ru/bank/index.php?proj=74676951F093A0754D74F2D6E7955F06",
-    "История":          "https://oge.fipi.ru/bank/index.php?proj=3CBBE97571208D9140697A6C2ABE91A0",
-    "Литература":       "https://oge.fipi.ru/bank/index.php?proj=6B2CD4C77304B2A3478E5A5B61F6899A",
-    "Математика":       "https://oge.fipi.ru/bank/index.php?proj=DE0E276E497AB3784C3FC4CC20248DC0",
-    "Обществознание":   "https://oge.fipi.ru/bank/index.php?proj=AE63AB28A2D28E194A286FA5A8EB9A78",
-    "Русский язык":     "https://oge.fipi.ru/bank/index.php?proj=2F5EE3B12FE2A0EA40B06BF61A015416",
-    "Физика":           "https://oge.fipi.ru/bank/index.php?proj=B24AFED7DE6AB5BC461219556CCA4F9B",
-    "Химия":            "https://oge.fipi.ru/bank/index.php?proj=33B3A93C5A6599124B04FB95616C835B"
+    "Биология": "https://oge.fipi.ru/bank/index.php?proj=0E1FA4229923A5CE4FC368155127ED90",
+    "География": "https://oge.fipi.ru/bank/index.php?proj=0FA4DA9E3AE2BA1547B75F0B08EF6445",
+    "Информатика": "https://oge.fipi.ru/bank/index.php?proj=74676951F093A0754D74F2D6E7955F06",
+    "История": "https://oge.fipi.ru/bank/index.php?proj=3CBBE97571208D9140697A6C2ABE91A0",
+    "Литература": "https://oge.fipi.ru/bank/index.php?proj=6B2CD4C77304B2A3478E5A5B61F6899A",
+    "Математика": "https://oge.fipi.ru/bank/index.php?proj=DE0E276E497AB3784C3FC4CC20248DC0",
+    "Обществознание": "https://oge.fipi.ru/bank/index.php?proj=AE63AB28A2D28E194A286FA5A8EB9A78",
+    "Русский язык": "https://oge.fipi.ru/bank/index.php?proj=2F5EE3B12FE2A0EA40B06BF61A015416",
+    "Физика": "https://oge.fipi.ru/bank/index.php?proj=B24AFED7DE6AB5BC461219556CCA4F9B",
+    "Химия": "https://oge.fipi.ru/bank/index.php?proj=33B3A93C5A6599124B04FB95616C835B"
 }
 
 EGE_SUBJECTS = {
-    "Английский язык":              "https://ege.fipi.ru/bank/index.php?proj=4B53A6CB75B0B5E1427E596EB4931A2A",
-    "Биология":                      "https://ege.fipi.ru/bank/index.php?proj=CA9D848A31849ED149D382C32A7A2BE4",
-    "География":                     "https://ege.fipi.ru/bank/index.php?proj=20E79180061DB32845C11FC7BD87C7C8",
-    "Информатика и ИКТ":             "https://ege.fipi.ru/bank/index.php?proj=B9ACA5BBB2E19E434CD6BEC25284C67F",
-    "История":                       "https://ege.fipi.ru/bank/index.php?proj=068A227D253BA6C04D0C832387FD0D89",
-    "Литература":                    "https://ege.fipi.ru/bank/index.php?proj=4F431E63B9C9B25246F00AD7B5253996",
-    "Математика. Базовый уровень":   "https://ege.fipi.ru/bank/index.php?proj=E040A72A1A3DABA14C90C97E0B6EE7DC",
+    "Английский язык": "https://ege.fipi.ru/bank/index.php?proj=4B53A6CB75B0B5E1427E596EB4931A2A",
+    "Биология": "https://ege.fipi.ru/bank/index.php?proj=CA9D848A31849ED149D382C32A7A2BE4",
+    "География": "https://ege.fipi.ru/bank/index.php?proj=20E79180061DB32845C11FC7BD87C7C8",
+    "Информатика и ИКТ": "https://ege.fipi.ru/bank/index.php?proj=B9ACA5BBB2E19E434CD6BEC25284C67F",
+    "История": "https://ege.fipi.ru/bank/index.php?proj=068A227D253BA6C04D0C832387FD0D89",
+    "Литература": "https://ege.fipi.ru/bank/index.php?proj=4F431E63B9C9B25246F00AD7B5253996",
+    "Математика. Базовый уровень": "https://ege.fipi.ru/bank/index.php?proj=E040A72A1A3DABA14C90C97E0B6EE7DC",
     "Математика. Профильный уровень": "https://ege.fipi.ru/bank/index.php?proj=AC437B34557F88EA4115D2F374B0A07B",
-    "Обществознание":                "https://ege.fipi.ru/bank/index.php?proj=756DF168F63F9A6341711C61AA5EC578",
-    "Русский язык":                  "https://ege.fipi.ru/bank/index.php?proj=AF0ED3F2557F8FFC4C06F80B6803FD26",
-    "Физика":                        "https://ege.fipi.ru/bank/index.php?proj=BA1F39653304A5B041B656915DC36B38",
-    "Химия":                         "https://ege.fipi.ru/bank/index.php?proj=EA45D8517ABEB35140D0D83E76F14A41"
+    "Обществознание": "https://ege.fipi.ru/bank/index.php?proj=756DF168F63F9A6341711C61AA5EC578",
+    "Русский язык": "https://ege.fipi.ru/bank/index.php?proj=AF0ED3F2557F8FFC4C06F80B6803FD26",
+    "Физика": "https://ege.fipi.ru/bank/index.php?proj=BA1F39653304A5B041B656915DC36B38",
+    "Химия": "https://ege.fipi.ru/bank/index.php?proj=EA45D8517ABEB35140D0D83E76F14A41"
 }
 
 OGE_SUBJECT_LIST = list(OGE_SUBJECTS.items())
 EGE_SUBJECT_LIST = list(EGE_SUBJECTS.items())
+
+# Список экзаменов из tg-bot.py
+EXAMS_LIST = [
+    {"date": date(2025, 9, 10), "subject": "химия", "title": "Тренировочная работа №1 по химии"},
+    {"date": date(2025, 9, 18), "subject": "русский язык", "title": "Тренировочная работа №1 по русскому языку"},
+    {"date": date(2025, 9, 23), "subject": "история", "title": "Тренировочная работа №1 по истории"},
+    {"date": date(2025, 9, 25), "subject": "география", "title": "Тренировочная работа №1 по географии"},
+    {"date": date(2025, 9, 30), "subject": "обществознание", "title": "Тренировочная работа №1 по обществознанию"},
+    {"date": date(2025, 10, 1), "subject": "математика", "title": "Тренировочная работа №1 по математике"},
+    {"date": date(2025, 10, 2), "subject": "русский язык",
+     "title": "Подготовка к ЕГЭ. Тематическая работа №1 по русскому языку. «Текст (позиции 1-3). Языковые нормы (позиции 4-8 ЕГЭ)» 2025-2026 гг."},
+    {"date": date(2025, 10, 13), "subject": "биология", "title": "Тренировочная работа №1 по биологии"},
+    {"date": date(2025, 10, 15), "subject": "физика", "title": "Тренировочная работа №1 по физике"},
+    {"date": date(2025, 10, 17), "subject": "литература", "title": "Тренировочная работа №1 по литературе"},
+    {"date": date(2025, 10, 21), "subject": "русский язык",
+     "title": "По заявкам. Тренировочная работа №2 по русскому языку"},
+    {"date": date(2025, 10, 23), "subject": "информатика",
+     "title": "Тренировочная работа №1 по информатике в г. Москве"},
+    {"date": date(2025, 10, 23), "subject": "информатика", "title": "Тренировочная работа №1 по информатике"},
+    {"date": date(2025, 11, 6), "subject": "химия", "title": "По заявкам. Тренировочная работа №2 по химии"},
+    {"date": date(2025, 11, 7), "subject": "обществознание",
+     "title": "По заявкам. Тренировочная работа №2 по обществознанию"},
+    {"date": date(2025, 11, 14), "subject": "русский язык",
+     "title": "Подготовка к ЕГЭ. Тематическая работа №2 по русскому языку. «Орфография (позиции 8-14 ЕГЭ)» 2025-2026 гг."},
+    {"date": date(2025, 11, 24), "subject": "география", "title": "По заявкам. Тренировочная работа №2 по географии"},
+    {"date": date(2025, 11, 25), "subject": "история", "title": "По заявкам. Тренировочная работа №2 по истории"},
+    {"date": date(2025, 11, 26), "subject": "английский язык", "title": "Тренировочная работа №1 по английскому языку"},
+    {"date": date(2025, 11, 27), "subject": "русский язык",
+     "title": "По заявкам. Диагностическая работа №1 по русскому языку"},
+    {"date": date(2025, 12, 2), "subject": "физика", "title": "По заявкам. Тренировочная работа №2 по физике"},
+    {"date": date(2025, 12, 4), "subject": "литература", "title": "По заявкам. Тренировочная работа №2 по литературе"},
+    {"date": date(2025, 12, 10), "subject": "обществознание",
+     "title": "По заявкам. Тренировочная работа №3 по обществознанию"},
+    {"date": date(2025, 12, 12), "subject": "русский язык",
+     "title": "Подготовка к ЕГЭ. Тематическая работа №3 по русскому языку. «Пунктуация, лексические нормы (позиции 16-21 ЕГЭ)» 2025-2026 гг."},
+    {"date": date(2025, 12, 16), "subject": "информатика",
+     "title": "По заявкам. Тренировочная работа №2 по информатике в г. Москве"},
+    {"date": date(2025, 12, 16), "subject": "информатика",
+     "title": "По заявкам. Тренировочная работа №2 по информатике"},
+    {"date": date(2025, 12, 18), "subject": "математика", "title": "Тренировочная работа №2 по математике"},
+    {"date": date(2025, 12, 19), "subject": "биология", "title": "По заявкам. Тренировочная работа №2 по биологии"},
+    {"date": date(2026, 1, 15), "subject": "русский язык",
+     "title": "По заявкам. Тренировочная работа №3 по русскому языку"},
+    {"date": date(2026, 1, 16), "subject": "химия", "title": "По заявкам. Тренировочная работа №3 по химии"},
+    {"date": date(2026, 1, 20), "subject": "история", "title": "По заявкам. Тренировочная работа №3 по истории"},
+    {"date": date(2026, 1, 22), "subject": "физика", "title": "По заявкам. Тренировочная работа №3 по физике"},
+    {"date": date(2026, 1, 27), "subject": "информатика",
+     "title": "По заявкам. Тренировочная работа №3 по информатике в г. Москве"},
+    {"date": date(2026, 1, 27), "subject": "информатика",
+     "title": "По заявкам. Тренировочная работа №3 по информатике"},
+    {"date": date(2026, 1, 29), "subject": "русский язык",
+     "title": "Подготовка к ЕГЭ. Тематическая работа №4 по русскому языку. «Речь. Текст. Лексика и фразеология (позиции 22–26)». 2025-2026 гг."},
+    {"date": date(2026, 1, 30), "subject": "биология", "title": "По заявкам. Тренировочная работа №3 по биологии"},
+    {"date": date(2026, 2, 2), "subject": "география", "title": "По заявкам. Тренировочная работа №3 по географии"},
+    {"date": date(2026, 2, 3), "subject": "математика", "title": "Тренировочная работа №1 по математике 10"},
+    {"date": date(2026, 2, 5), "subject": "литература", "title": "По заявкам. Тренировочная работа №3 по литературе"},
+    {"date": date(2026, 2, 6), "subject": "обществознание",
+     "title": "По заявкам. Тренировочная работа №4 по обществознанию"},
+    {"date": date(2026, 2, 10), "subject": "математика", "title": "Тренировочная работа №3 по математике"},
+    {"date": date(2026, 2, 11), "subject": "английский язык",
+     "title": "По заявкам. Тренировочная работа №2 по английскому языку"},
+    {"date": date(2026, 2, 12), "subject": "русский язык",
+     "title": "По заявкам. Тренировочная работа №4 по русскому языку"},
+    {"date": date(2026, 2, 25), "subject": "история", "title": "По заявкам. Тренировочная работа №4 по истории"},
+    {"date": date(2026, 3, 3), "subject": "информатика",
+     "title": "По заявкам. Тренировочная работа №4 по информатике 11 в г. Москве"},
+    {"date": date(2026, 3, 3), "subject": "информатика", "title": "По заявкам. Тренировочная работа №4 по информатике"},
+    {"date": date(2026, 3, 5), "subject": "русский язык",
+     "title": "Подготовка к ЕГЭ. Тематическая работа №5 по русскому языку. «Сочинение-рассуждение (позиция 27 ЕГЭ)». 2025-2026 гг."},
+    {"date": date(2026, 3, 10), "subject": "химия", "title": "По заявкам. Тренировочная работа №4 по химии"},
+    {"date": date(2026, 3, 11), "subject": "география", "title": "По заявкам. Тренировочная работа №4 по географии"},
+    {"date": date(2026, 3, 13), "subject": "физика", "title": "По заявкам. Тренировочная работа №4 по физике"},
+    {"date": date(2026, 3, 16), "subject": "биология", "title": "По заявкам. Тренировочная работа №4 по биологии"},
+    {"date": date(2026, 3, 17), "subject": "математика", "title": "Тренировочная работа №4 по математике"},
+    {"date": date(2026, 3, 19), "subject": "русский язык",
+     "title": "По заявкам. Диагностическая работа №2 по русскому языку"},
+    {"date": date(2026, 3, 20), "subject": "обществознание",
+     "title": "По заявкам. Тренировочная работа №5 по обществознанию"},
+    {"date": date(2026, 4, 1), "subject": "история", "title": "По заявкам. Тренировочная работа №5 по истории"},
+    {"date": date(2026, 4, 13), "subject": "литература", "title": "По заявкам. Тренировочная работа №4 по литературе"},
+    {"date": date(2026, 4, 14), "subject": "информатика",
+     "title": "По заявкам. Тренировочная работа №5 по информатике в г. Москве"},
+    {"date": date(2026, 4, 14), "subject": "информатика",
+     "title": "По заявкам. Тренировочная работа №5 по информатике"},
+    {"date": date(2026, 4, 15), "subject": "география", "title": "По заявкам. Тренировочная работа №5 по географии"},
+    {"date": date(2026, 4, 16), "subject": "английский язык",
+     "title": "По заявкам. Тренировочная работа №3 по английскому языку"},
+    {"date": date(2026, 4, 17), "subject": "физика", "title": "По заявкам. Тренировочная работа №5 по физике"},
+    {"date": date(2026, 4, 20), "subject": "обществознание",
+     "title": "По заявкам. Тренировочная работа №6 по обществознанию"},
+    {"date": date(2026, 4, 22), "subject": "математика", "title": "Тренировочная работа №5 по математике"},
+    {"date": date(2026, 4, 23), "subject": "биология", "title": "По заявкам. Тренировочная работа №5 по биологии"},
+    {"date": date(2026, 4, 27), "subject": "химия", "title": "По заявкам. Тренировочная работа №5 по химии"},
+    {"date": date(2026, 4, 30), "subject": "русский язык",
+     "title": "По заявкам. Тренировочная работа №1 по русскому языку 10-11 класс"},
+    {"date": date(2026, 5, 12), "subject": "математика", "title": "Тренировочная работа №2 по математике 10-11"},
+]
+
+ALL_SUBJECTS = sorted(list(set(exam["subject"] for exam in EXAMS_LIST)))
