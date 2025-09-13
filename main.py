@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
+
 """
 Главный файл запуска ФИПИ-бота
 """
+
 import logging
 import asyncio
 import signal
 import datetime
+
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
+
 from config import BOT_TOKEN, CHECK_INTERVAL
 from handlers import (start_cmd, status_cmd, handle_text_message,
                      on_shutdown, on_error, send_notification)  # Добавили send_notification
@@ -33,17 +37,20 @@ async def on_startup(context):
     log.info("🤖 Бот инициализирован, запуск систем...")
     queue_task = asyncio.create_task(process_queue_manager())
     log.info(f"⏰ Автоматические проверки каждые {CHECK_INTERVAL} секунд")
+    log.info("🎯 Уведомления о Статграде настроены на 9:00 MSK")
 
 async def cleanup():
     """Очистка ресурсов при завершении"""
     global queue_task
     log.info("🧹 Начало очистки ресурсов...")
+    
     if queue_task and not queue_task.done():
         queue_task.cancel()
         try:
             await queue_task
         except asyncio.CancelledError:
             log.info("⏹️ Менеджер очереди остановлен")
+    
     await shutdown_executor()
     log.info("✅ Очистка ресурсов завершена")
 
@@ -55,27 +62,37 @@ def signal_handler(signum, frame):
 
 def main():
     global application_instance
+    
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
+    
     app = Application.builder().token(BOT_TOKEN).build()
     application_instance = app
+
     # Обработчики команд
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("stop", on_shutdown))
-    # Обработчик текстовых сообщений
+
+    # Обработчик текстовых сообщений  
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+
     # Периодические задачи
     app.job_queue.run_once(on_startup, when=0)
     app.job_queue.run_repeating(periodic_check, interval=CHECK_INTERVAL, first=30)  # Проверка каждую минуту
     app.job_queue.run_repeating(daily_cleanup, interval=86400, first=3600)  # Очистка каждые 24 часа, первая через час
-    # Новый: ежедневные напоминания о расписании (на 10:00 MSK)
-    app.job_queue.run_daily(send_notification, time=datetime.datetime.strptime("10:00", "%H:%M").time())
+
+    # ИЗМЕНЕНО: ежедневные напоминания о расписании (на 9:00 MSK вместо 10:00)
+    app.job_queue.run_daily(send_notification, time=datetime.datetime.strptime("09:00", "%H:%M").time())
+
     # Обработка ошибок
     app.add_error_handler(on_error)
+
     print("🤖 ФИПИ-бот запущен с автоматическими проверками!")
     print(f"⏰ Проверка изменений каждые {CHECK_INTERVAL} секунд")
     print("🧹 Ежедневная очистка данных активирована")
+    print("🎯 Уведомления о Статграде: ежедневно в 9:00 MSK")
+
     try:
         app.run_polling(drop_pending_updates=True)
     except KeyboardInterrupt:
