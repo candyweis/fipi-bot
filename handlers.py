@@ -8,39 +8,45 @@ import os
 import asyncio
 import logging
 from datetime import datetime, date
+
 from telegram import Update, Message
 from telegram.ext import ContextTypes, ApplicationHandlerStop
 
 from keyboards import (kb_main_reply, kb_subjects_reply, kb_user_subjects_reply,
-                       kb_subscriptions_menu_reply, kb_cached_result_choice,
-                       kb_reminders_menu, kb_subjects_reminders)
+                      kb_subscriptions_menu_reply, kb_cached_result_choice,
+                      kb_reminders_menu, kb_subjects_reminders)
+
 from database import (store, save_store, get_recent_parsing, save_parsing_result,
-                      clean_old_parsing_cache)
+                     clean_old_parsing_cache, add_statgrad_subscription, 
+                     remove_statgrad_subscription, get_statgrad_subscriptions)
+
 from utils import subj_by_url, get_current_count, split_message, send_changes_file
 from queue_manager import queue_parsing_task, get_queue_status
-from config import OGE_SUBJECT_LIST, EGE_SUBJECT_LIST, OGE_SUBJECTS, EGE_SUBJECTS, ALL_SUBJECTS, EXAMS_LIST
+
+from config import (OGE_SUBJECT_LIST, EGE_SUBJECT_LIST, OGE_SUBJECTS, EGE_SUBJECTS, 
+                   ALL_SUBJECTS, EXAMS_LIST, STATGRAD_OGE_LIST, ALL_EXAMS_LIST, 
+                   SUBJECT_MAPPING)
 
 log = logging.getLogger("FIPI-Bot")
-
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /start"""
     print(f"🚀 START команда от {update.message.from_user.id}")
     log.info(f"🚀 START команда от {update.message.from_user.id}")
-
     clean_old_parsing_cache()
+    
     await update.message.reply_text(
         "🤖 Добро пожаловать в ФИПИ-бот!\n\n"
+        "🔔 Новинка: Теперь доступны уведомления о Статграде!\n"
+        "📚 При подписке на предмет ФИПИ автоматически подключаются и уведомления о Статграде\n\n"
         "Выберите действие с помощью кнопок ниже:",
         reply_markup=kb_main_reply()
     )
-
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /status - показывает статус очереди"""
     status = await get_queue_status()
     await update.message.reply_text(status, reply_markup=kb_main_reply())
-
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик текстовых сообщений (Reply кнопки)"""
@@ -117,15 +123,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             # Если есть состояние waiting_for_subject, это должно было обработаться выше
             await message.reply_text("❌ Ошибка состояния. Начните заново.", reply_markup=kb_main_reply())
             context.user_data.clear()
+
     else:
         await message.reply_text(
             "❓ Не понимаю эту команду. Используйте кнопки меню:",
             reply_markup=kb_main_reply()
         )
-
-    # ❌ УДАЛИЛИ ЭТУ СТРОЧКУ - ОНА ЛОМАЛА ВСЁ!
-    # context.user_data.clear()
-
 
 async def handle_cache_choice(message: Message, context: ContextTypes.DEFAULT_TYPE, text: str):
     """Обрабатывает выбор между кэшированным результатом и новым парсингом"""
@@ -153,8 +156,10 @@ async def handle_cache_choice(message: Message, context: ContextTypes.DEFAULT_TY
                 reply_markup=kb_main_reply()
             )
             await start_new_parsing(message, context, url, operation)
+
     elif text == "🔄 Запустить новый парсинг":
         await start_new_parsing(message, context, url, operation)
+
     else:
         await message.reply_text(
             "❓ Выберите один из вариантов:",
@@ -164,10 +169,10 @@ async def handle_cache_choice(message: Message, context: ContextTypes.DEFAULT_TY
 
     context.user_data.clear()
 
-
 async def send_cached_ids_file(message: Message, ids: set, url: str, timestamp: str):
     """Отправляет кэшированный файл с ID"""
     fname = f"cached_ids_{url.split('=')[-1]}_{timestamp.replace(':', '-').replace('.', '_')}.txt"
+    
     with open(fname, "w", encoding="utf-8") as f:
         for t in sorted(ids):
             f.write(t + "\n")
@@ -185,11 +190,11 @@ async def send_cached_ids_file(message: Message, ids: set, url: str, timestamp: 
         )
 
     await message.reply_text("✅ Готовый файл отправлен!", reply_markup=kb_main_reply())
+
     try:
         os.remove(fname)
     except:
         pass
-
 
 async def start_new_parsing(message: Message, context: ContextTypes.DEFAULT_TYPE, url: str, operation: str):
     """Запускает новый парсинг с редактированием сообщения"""
@@ -217,7 +222,6 @@ async def start_new_parsing(message: Message, context: ContextTypes.DEFAULT_TYPE
         context.user_data["cmp_map"] = {"0": url}
         await queue_parsing_task(editable_query, context, "cmp_0", operation, compare_ids_now_result)
 
-
 async def show_subscriptions_menu(message: Message, context: ContextTypes.DEFAULT_TYPE):
     """Показывает меню подписок"""
     await message.reply_text(
@@ -225,6 +229,16 @@ async def show_subscriptions_menu(message: Message, context: ContextTypes.DEFAUL
         reply_markup=kb_subscriptions_menu_reply()
     )
 
+def extract_subject_from_fipi_selection(text: str) -> str:
+    """Извлекает название предмета из выбора ФИПИ для сопоставления с расписанием"""
+    if text.startswith("ОГЭ "):
+        subject_name = text[4:].lower()
+    elif text.startswith("ЕГЭ "):
+        subject_name = text[4:].lower()
+    else:
+        return None
+    
+    return SUBJECT_MAPPING.get(subject_name, subject_name)
 
 async def handle_subject_selection(message: Message, context: ContextTypes.DEFAULT_TYPE, text: str):
     """Обрабатывает выбор предмета для ПОДПИСКИ"""
@@ -236,7 +250,7 @@ async def handle_subject_selection(message: Message, context: ContextTypes.DEFAU
         subject_name = text[4:]
         subjects_dict = OGE_SUBJECTS
     elif text.startswith("ЕГЭ "):
-        exam_type = "ege"
+        exam_type = "ege"  
         subject_name = text[4:]
         subjects_dict = EGE_SUBJECTS
     else:
@@ -249,6 +263,7 @@ async def handle_subject_selection(message: Message, context: ContextTypes.DEFAU
         return
 
     subs = store["subscriptions"].setdefault(chat_id, [])
+    
     if url in subs:
         await message.reply_text(
             f"✅ Вы уже подписаны на {text}",
@@ -256,38 +271,69 @@ async def handle_subject_selection(message: Message, context: ContextTypes.DEFAU
         )
     else:
         subs.append(url)
-        save_store(store)
-        await message.reply_text(
-            f"✅ Подписка активирована: {text}",
-            reply_markup=kb_main_reply()
-        )
-
+        
+        # НОВАЯ ЛОГИКА: Автоматическая подписка на Статград
+        mapped_subject = extract_subject_from_fipi_selection(text)
+        if mapped_subject:
+            statgrad_added = add_statgrad_subscription(chat_id, mapped_subject)
+            if statgrad_added:
+                save_store(store)
+                await message.reply_text(
+                    f"✅ Подписка активирована: {text}\n"
+                    f"🎯 Автоматически подключены уведомления о Статграде по предмету «{mapped_subject}»!\n"
+                    f"📅 Уведомления приходят в 9:00 за 1 день и за 7 дней до работы",
+                    reply_markup=kb_main_reply()
+                )
+            else:
+                save_store(store)
+                await message.reply_text(
+                    f"✅ Подписка активирована: {text}\n"
+                    f"ℹ️ Уведомления о Статграде по предмету «{mapped_subject}» уже были подключены ранее",
+                    reply_markup=kb_main_reply()
+                )
+        else:
+            save_store(store)
+            await message.reply_text(
+                f"✅ Подписка активирована: {text}",
+                reply_markup=kb_main_reply()
+            )
 
 async def show_my_subscriptions(message: Message, context: ContextTypes.DEFAULT_TYPE):
     """Показывает список подписок пользователя"""
     chat_id = str(message.from_user.id)
     subs = store["subscriptions"].get(chat_id, [])
-
-    if not subs:
+    statgrad_subs = get_statgrad_subscriptions(chat_id)
+    
+    if not subs and not statgrad_subs:
         await message.reply_text(
             "📭 У вас нет активных подписок.",
             reply_markup=kb_main_reply()
         )
     else:
-        text_lines = ["📋 Ваши подписки:"]
-        for i, url in enumerate(subs, 1):
-            text_lines.append(f"{i}. {subj_by_url(url)}")
+        text_lines = []
+        
+        if subs:
+            text_lines.append("📚 Ваши подписки на ФИПИ:")
+            for i, url in enumerate(subs, 1):
+                text_lines.append(f"{i}. {subj_by_url(url)}")
+        
+        if statgrad_subs:
+            if subs:
+                text_lines.append("")
+            text_lines.append("📋 Ваши подписки на Статград:")
+            for i, subject in enumerate(statgrad_subs, 1):
+                text_lines.append(f"{i}. {subject.title()}")
+
         await message.reply_text(
             "\n".join(text_lines),
             reply_markup=kb_main_reply()
         )
 
-
 async def show_task_counts(message: Message, context: ContextTypes.DEFAULT_TYPE):
     """ИСПРАВЛЕННАЯ ВЕРСИЯ - НЕ БЛОКИРУЕТ БОТ"""
     chat_id = str(message.from_user.id)
     subs = store["subscriptions"].get(chat_id, [])
-
+    
     if not subs:
         await message.reply_text(
             "📭 У вас нет подписок.",
@@ -296,6 +342,7 @@ async def show_task_counts(message: Message, context: ContextTypes.DEFAULT_TYPE)
         return
 
     msg = await message.reply_text("📊 Получение данных...")
+
     lines = ["📊 Текущее количество заданий:"]
 
     # ПАРАЛЛЕЛЬНОЕ ВЫПОЛНЕНИЕ - НЕ БЛОКИРУЕТ БОТ
@@ -304,7 +351,7 @@ async def show_task_counts(message: Message, context: ContextTypes.DEFAULT_TYPE)
         task = asyncio.get_event_loop().run_in_executor(None, get_current_count, url)
         tasks.append((url, task))
 
-    # Обрабатываем результаты по мере готовности
+    # Обрабатываем результаты по мере готовности  
     for i, (url, task) in enumerate(tasks, 1):
         try:
             await msg.edit_text(f"📊 Получение данных... ({i}/{len(subs)})")
@@ -317,12 +364,11 @@ async def show_task_counts(message: Message, context: ContextTypes.DEFAULT_TYPE)
     await msg.edit_text("\n".join(lines))
     await message.reply_text("✅ Данные обновлены", reply_markup=kb_main_reply())
 
-
 async def show_ids_menu(message: Message, context: ContextTypes.DEFAULT_TYPE):
     """Показывает меню для создания файла ID"""
     chat_id = str(message.from_user.id)
     subs = store["subscriptions"].get(chat_id, [])
-
+    
     if not subs:
         await message.reply_text(
             "📭 У вас нет подписок.",
@@ -337,12 +383,11 @@ async def show_ids_menu(message: Message, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=kb_user_subjects_reply(subs, "ids")
     )
 
-
 async def show_compare_menu(message: Message, context: ContextTypes.DEFAULT_TYPE):
     """Показывает меню для сравнения ID"""
     chat_id = str(message.from_user.id)
     subs = store["subscriptions"].get(chat_id, [])
-
+    
     if not subs:
         await message.reply_text(
             "📭 У вас нет подписок.",
@@ -357,12 +402,11 @@ async def show_compare_menu(message: Message, context: ContextTypes.DEFAULT_TYPE
         reply_markup=kb_user_subjects_reply(subs, "compare")
     )
 
-
 async def show_unsubscribe_menu(message: Message, context: ContextTypes.DEFAULT_TYPE):
     """Показывает меню для отписки"""
     chat_id = str(message.from_user.id)
     subs = store["subscriptions"].get(chat_id, [])
-
+    
     if not subs:
         await message.reply_text(
             "📭 У вас нет подписок.",
@@ -376,7 +420,6 @@ async def show_unsubscribe_menu(message: Message, context: ContextTypes.DEFAULT_
         reply_markup=kb_user_subjects_reply(subs, "unsubscribe")
     )
 
-
 async def handle_user_subject_action(message: Message, context: ContextTypes.DEFAULT_TYPE, text: str):
     """Обрабатывает действия с предметами пользователя"""
     action = context.user_data.get("waiting_for_subject")
@@ -389,7 +432,7 @@ async def handle_user_subject_action(message: Message, context: ContextTypes.DEF
 
     chat_id = str(message.from_user.id)
     subs = store["subscriptions"].get(chat_id, [])
-
+    
     url = None
     for sub_url in subs:
         if subj_by_url(sub_url) == text:
@@ -440,39 +483,68 @@ async def handle_user_subject_action(message: Message, context: ContextTypes.DEF
 
     context.user_data.clear()
 
-
 async def start_ids_parsing(message: Message, context: ContextTypes.DEFAULT_TYPE, url: str):
     """Запускает парсинг ID"""
     await start_new_parsing(message, context, url, "Создание файла ID")
-
 
 async def start_compare_parsing(message: Message, context: ContextTypes.DEFAULT_TYPE, url: str):
     """Запускает сравнение ID"""
     await start_new_parsing(message, context, url, "Сравнение ID")
 
-
 async def process_unsubscribe(message: Message, context: ContextTypes.DEFAULT_TYPE, url: str):
     """Обрабатывает отписку"""
     chat_id = str(message.from_user.id)
     subs = store["subscriptions"].get(chat_id, [])
-
+    
     if url in subs:
         subs.remove(url)
-        save_store(store)
-        await message.reply_text(
-            f"✅ Вы отписались от: {subj_by_url(url)}",
-            reply_markup=kb_main_reply()
-        )
+        
+        # Определяем предмет для потенциальной отписки от Статграда
+        subject_text = subj_by_url(url)
+        mapped_subject = extract_subject_from_fipi_selection(subject_text)
+        
+        # Проверяем, есть ли еще подписки на тот же предмет
+        still_subscribed_to_subject = False
+        if mapped_subject:
+            for remaining_url in subs:
+                remaining_subject_text = subj_by_url(remaining_url)  
+                remaining_mapped_subject = extract_subject_from_fipi_selection(remaining_subject_text)
+                if remaining_mapped_subject == mapped_subject:
+                    still_subscribed_to_subject = True
+                    break
+        
+        # Если больше нет подписок на этот предмет, отписываем от Статграда
+        if mapped_subject and not still_subscribed_to_subject:
+            statgrad_removed = remove_statgrad_subscription(chat_id, mapped_subject)
+            if statgrad_removed:
+                save_store(store)
+                await message.reply_text(
+                    f"✅ Вы отписались от: {subj_by_url(url)}\n"
+                    f"🎯 Также отключены уведомления о Статграде по предмету «{mapped_subject}»",
+                    reply_markup=kb_main_reply()
+                )
+            else:
+                save_store(store)
+                await message.reply_text(
+                    f"✅ Вы отписались от: {subj_by_url(url)}",
+                    reply_markup=kb_main_reply()
+                )
+        else:
+            save_store(store)
+            await message.reply_text(
+                f"✅ Вы отписались от: {subj_by_url(url)}",
+                reply_markup=kb_main_reply()
+            )
     else:
         await message.reply_text(
             "❌ Вы уже не подписаны на этот предмет.",
             reply_markup=kb_main_reply()
         )
 
-
 async def send_ids_file_result(query, context: ContextTypes.DEFAULT_TYPE, ids: set, url: str):
     """Отправляет файл с ID заданий и сохраняет в кэш"""
     fname = f"ids_{url.split('=')[-1]}.txt"
+    
     with open(fname, "w", encoding="utf-8") as f:
         for t in sorted(ids):
             f.write(t + "\n")
@@ -490,11 +562,11 @@ async def send_ids_file_result(query, context: ContextTypes.DEFAULT_TYPE, ids: s
         )
 
     await query.message.reply_text("✅ Файл отправлен!", reply_markup=kb_main_reply())
+
     try:
         os.remove(fname)
     except:
         pass
-
 
 async def compare_ids_now_result(query, context: ContextTypes.DEFAULT_TYPE, result: tuple, url: str):
     """Обрабатывает результат сравнения ID"""
@@ -509,16 +581,16 @@ async def compare_ids_now_result(query, context: ContextTypes.DEFAULT_TYPE, resu
         )
     else:
         await query.edit_message_text("✅ Парсинг завершен! Найдены изменения...")
-
+        
         txt_lines = ["🔄 Изменения найдены:"]
         if added:
             txt_lines.append(f"➕ Добавлены ({len(added)}): " + ", ".join(sorted(list(added)[:10])))
             if len(added) > 10:
-                txt_lines.append(f"   ... и ещё {len(added) - 10}")
+                txt_lines.append(f" ... и ещё {len(added) - 10}")
         if removed:
             txt_lines.append(f"➖ Удалены ({len(removed)}): " + ", ".join(sorted(list(removed)[:10])))
             if len(removed) > 10:
-                txt_lines.append(f"   ... и ещё {len(removed) - 10}")
+                txt_lines.append(f" ... и ещё {len(removed) - 10}")
 
         txt = "\n".join(txt_lines)
         messages = split_message(txt)
@@ -526,9 +598,7 @@ async def compare_ids_now_result(query, context: ContextTypes.DEFAULT_TYPE, resu
             await query.message.reply_text(msg)
 
         await send_changes_file(query, context, url, added, removed, timestamp)
-
-    await query.message.reply_text("✅ Результаты отправлены!", reply_markup=kb_main_reply())
-
+        await query.message.reply_text("✅ Результаты отправлены!", reply_markup=kb_main_reply())
 
 async def on_shutdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Очищает ресурсы при остановке бота."""
@@ -537,72 +607,81 @@ async def on_shutdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await shutdown_executor()
     raise ApplicationHandlerStop
 
-
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
     log.error(f"Ошибка: {context.error}")
 
-
 # Новые функции для напоминаний
-
 async def show_reminders_menu(message: Message, context: ContextTypes.DEFAULT_TYPE):
     await message.reply_text("📅 Меню расписания и напоминаний:", reply_markup=kb_reminders_menu())
-
 
 async def handle_reminder_subscription(message: Message, context: ContextTypes.DEFAULT_TYPE, text: str):
     chat_id = str(message.from_user.id)
     subs = store["reminder_subscriptions"].setdefault(chat_id, [])
-
+    
     if text in subs:
         subs.remove(text)
         await message.reply_text(f"✅ Отписка от {text}", reply_markup=kb_reminders_menu())
     else:
         subs.append(text)
         await message.reply_text(f"✅ Подписка на {text}", reply_markup=kb_reminders_menu())
-
+    
     save_store(store)
     context.user_data.clear()
-
 
 async def show_my_reminder_subs(message: Message, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(message.from_user.id)
     subs = store["reminder_subscriptions"].get(chat_id, [])
-
+    
     if not subs:
         await message.reply_text("📭 Нет подписок на напоминания.", reply_markup=kb_reminders_menu())
     else:
         text = "📋 Ваши подписки на напоминания:\n" + "\n".join(subs)
         await message.reply_text(text, reply_markup=kb_reminders_menu())
-
+    
     context.user_data.clear()
 
-
 async def show_schedule_by_subject(message: Message, context: ContextTypes.DEFAULT_TYPE, text: str):
-    subject_exams = [exam for exam in EXAMS_LIST if exam["subject"] == text]
-
+    # Объединяем все экзамены по предмету
+    subject_exams = [exam for exam in ALL_EXAMS_LIST if exam["subject"] == text]
+    
     if not subject_exams:
         await message.reply_text(f"Нет расписания для {text}.", reply_markup=kb_reminders_menu())
         return
 
-    msg_text = f"📅 Расписание для {text}:\n"
-    for exam in sorted(subject_exams, key=lambda x: x["date"]):
-        msg_text += f"{exam['date'].strftime('%d.%m.%Y')}: {exam['title']}\n"
+    msg_text = f"📅 Расписание для {text}:\n\n"
+    
+    # Сортируем по дате и группируем по типам экзаменов
+    ege_exams = [e for e in subject_exams if e.get("grade") != 9]
+    oge_exams = [e for e in subject_exams if e.get("grade") == 9]
+    
+    if ege_exams:
+        msg_text += "🎓 ЕГЭ (11 класс):\n"
+        for exam in sorted(ege_exams, key=lambda x: x["date"]):
+            msg_text += f"• {exam['date'].strftime('%d.%m.%Y')}: {exam['title']}\n"
+        msg_text += "\n"
+    
+    if oge_exams:
+        msg_text += "📝 ОГЭ (9 класс):\n"
+        for exam in sorted(oge_exams, key=lambda x: x["date"]):
+            msg_text += f"• {exam['date'].strftime('%d.%m.%Y')}: {exam['title']}\n"
 
     await message.reply_text(msg_text, reply_markup=kb_reminders_menu())
     context.user_data.clear()
 
-
-# Функция для ежедневных напоминаний (из tg-bot.py, интегрирована)
+# Функция для ежедневных напоминаний (обновленная)
 async def send_notification(context: ContextTypes.DEFAULT_TYPE):
     """Функция, которая проверяет даты и рассылает уведомления."""
     today = date.today()
     bot = context.bot
 
+    # Проверяем ЕГЭ экзамены (старая логика)
     for exam in EXAMS_LIST:
         days_until = (exam["date"] - today).days
+        
         if days_until in (1, 7):
             message_text = f"🔔 Напоминание! Через {days_until} день(дня) состоится:\n{exam['title']}"
-
+            
             subscribers = []
             for chat_id, subjects in store.get("reminder_subscriptions", {}).items():
                 if exam["subject"] in subjects:
@@ -611,8 +690,27 @@ async def send_notification(context: ContextTypes.DEFAULT_TYPE):
             for user_id in subscribers:
                 try:
                     await bot.send_message(chat_id=user_id, text=message_text)
-                    log.info(f"Уведомление отправлено пользователю {user_id} о {exam['subject']}")
+                    log.info(f"Уведомление ЕГЭ отправлено пользователю {user_id} о {exam['subject']}")
                 except Exception as e:
-                    log.error(f"Ошибка отправки пользователю {user_id}: {e}")
+                    log.error(f"Ошибка отправки ЕГЭ уведомления пользователю {user_id}: {e}")
+                await asyncio.sleep(0.1)
 
+    # НОВОЕ: Проверяем Статград экзамены
+    for exam in STATGRAD_OGE_LIST:
+        days_until = (exam["date"] - today).days
+        
+        if days_until in (1, 7):
+            message_text = f"🎯 Статград через {days_until} день(дня)!\n📚 {exam['title']}"
+            
+            subscribers = []
+            for chat_id, subjects in store.get("statgrad_subscriptions", {}).items():
+                if exam["subject"] in subjects:
+                    subscribers.append(chat_id)
+
+            for user_id in subscribers:
+                try:
+                    await bot.send_message(chat_id=user_id, text=message_text)
+                    log.info(f"Уведомление Статград отправлено пользователю {user_id} о {exam['subject']}")
+                except Exception as e:
+                    log.error(f"Ошибка отправки Статград уведомления пользователю {user_id}: {e}")
                 await asyncio.sleep(0.1)
