@@ -280,8 +280,9 @@ async def handle_subject_selection(message: Message, context: ContextTypes.DEFAU
                 save_store(store)
                 await message.reply_text(
                     f"✅ Подписка активирована: {text}\n"
-                    f"🎯 Автоматически подключены уведомления о Статграде по предмету «{mapped_subject}»!\n"
-                    f"📅 Уведомления приходят в 9:00 за 1 день и за 7 дней до работы",
+                    f"🎯 Подключены уведомления о Статграде по предмету «{mapped_subject}»!\n"
+                    f"📅 Уведомления приходят в 9:00 за 1 день и за 7 дней до работы\n"
+                    f"🎯 Подключены уведомления об изменении банка ФИПИ", 
                     reply_markup=kb_main_reply()
                 )
             else:
@@ -313,7 +314,7 @@ async def show_my_subscriptions(message: Message, context: ContextTypes.DEFAULT_
         text_lines = []
         
         if subs:
-            text_lines.append("📚 Ваши подписки на ФИПИ:")
+            text_lines.append("📚 Ваши подписки на ФИПИ и пробники:")
             for i, url in enumerate(subs, 1):
                 text_lines.append(f"{i}. {subj_by_url(url)}")
         
